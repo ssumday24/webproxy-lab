@@ -1,4 +1,7 @@
 /*
+0. 디렉토리 이동 
+cd webproxy-lab/tiny
+
 1. 컴파일
 gcc -o tiny tiny.c csapp.c -lpthread -Wall
 
