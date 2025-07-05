@@ -1,3 +1,12 @@
+/*
+
+1.컴파일
+gcc -o jh_echo_server jongho_echo_server.c csapp.c
+
+2.실행
+./jh_echo_server 8080
+
+*/
 #include "csapp.h"
 void echo(int connfd); // 인자 : 연결소켓
 
@@ -10,7 +19,7 @@ int main(int argc, char **argv)
 
     if (argc !=2){
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
-
+        exit(1);
     }
 
     //듣기소켓 = argv[1] (포트번호)

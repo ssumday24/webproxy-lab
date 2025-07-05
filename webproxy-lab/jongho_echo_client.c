@@ -1,5 +1,14 @@
-#include "csapp.h" 
+/*
 
+1.컴파일
+gcc -o jh_echo_client jongho_echo_client.c csapp.c
+
+2.실행 (인자제공)
+cd webproxy-lab
+./jh_echo_client localhost 8080
+*/
+
+#include "csapp.h" 
 int main(int argc, char **argv)
 {
     int clientfd;
