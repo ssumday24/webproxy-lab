@@ -10,7 +10,11 @@ gcc -o tiny tiny.c csapp.c -lpthread -Wall
 
 3. 웹 브라우저 접속
 http://localhost:8000
+http://localhost:8000/home.html
 
+안될시 쿠키,캐시 삭제후 실행
+
+cd webproxy-lab/tiny && gcc -o tiny tiny.c csapp.c -lpthread -Wall && ./tiny 8000
 */
 
 #include "csapp.h" 
@@ -135,26 +139,46 @@ void doit(int fd)
 
 // 3.  에처 처리 기능
 void clienterror(int fd, char *cause, char *errnum,
-                char *shortmsg, char *longmsg)
+    char *shortmsg, char *longmsg)
 {
-    char buf[MAXLINE], body[MAXBUF]; // HTTP 응답 헤더 및 본문 버퍼
+char buf[MAXLINE], body[MAXBUF]; // HTTP 응답 헤더 및 본문 버퍼
+int content_len = 0; // 현재 body의 길이를 추적할 변수
 
-    /* HTTP 응답 본문 생성 */
-    sprintf(body, "<html><title>Tiny Error</title>"); // HTML 시작
-    sprintf(body, "%s<body bgcolor=\"ffffff\">\r\n", body); // 배경색 설정
-    sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg); // 오류 번호와 짧은 메시지
-    sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause); // 긴 메시지와 원인
-    sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body); // 서버 서명
-    
-    /* HTTP 응답 헤더 생성 및 전송 */
-    sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg); // 응답 라인
-    Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf, "Content-type: text/html\r\n"); 
-    Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body)); 
-    Rio_writen(fd, buf, strlen(buf));
-    
-    Rio_writen(fd, body, strlen(body)); // 완성된 HTTP 응답 본문 전송
+/* HTTP 응답 본문 생성 */
+// 각 snprintf 호출 시, body + 현재 길이(content_len) 위치에 이어서 쓰고
+// 남은 버퍼 공간(MAXBUF - content_len)을 지정하여 안전성 확보
+content_len += snprintf(body + content_len, MAXBUF - content_len, 
+               "<html><title>Tiny Error</title>\r\n");
+content_len += snprintf(body + content_len, MAXBUF - content_len, 
+               "<body bgcolor=\"ffffff\">\r\n"); // 배경색 설정
+content_len += snprintf(body + content_len, MAXBUF - content_len, 
+               "%s: %s\r\n", errnum, shortmsg); // 오류 번호와 짧은 메시지
+content_len += snprintf(body + content_len, MAXBUF - content_len, 
+               "<p>%s: %s\r\n", longmsg, cause); // 긴 메시지와 원인
+content_len += snprintf(body + content_len, MAXBUF - content_len, 
+               "<hr><em>The Tiny Web server</em>\r\n"); // 서버 서명
+
+// content_len이 MAXBUF를 초과하지 않도록 보장되므로,
+// 마지막에 Rio_writen(fd, body, content_len);을 사용해도 안전합니다.
+
+/* HTTP 응답 헤더 생성 및 전송 */
+// 여기서는 buf를 초기화하고 각 헤더를 별도로 Rio_writen으로 전송하는 방식으로 변경
+// (또는 serve_static처럼 하나의 buf에 모두 담아 한번에 보낼 수도 있습니다.)
+
+// 응답 라인 전송
+snprintf(buf, MAXLINE, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
+Rio_writen(fd, buf, strlen(buf));
+
+// Content-type 헤더 전송 (오류 페이지는 HTML이므로 text/html)
+snprintf(buf, MAXLINE, "Content-type: text/html\r\n"); 
+Rio_writen(fd, buf, strlen(buf));
+
+// Content-length 헤더 전송 (body의 실제 길이 사용)
+snprintf(buf, MAXLINE, "Content-length: %d\r\n\r\n", content_len); 
+Rio_writen(fd, buf, strlen(buf));
+
+// 완성된 HTTP 응답 본문 전송
+Rio_writen(fd, body, content_len);
 }
 
 // 4. read_requesthdrs - HTTP 요청 헤더들을 읽기 (여기서는 읽기만 하고 버림)
@@ -163,7 +187,9 @@ void read_requesthdrs(rio_t *rp)
     char buf[MAXLINE];
 
     Rio_readlineb(rp, buf, MAXLINE); // 첫 번째 헤더 라인 읽기
-    while(strcmp(buf, "\r\n")) { // CRLF(빈 줄)가 나올 때까지 반복해서 모든 헤더 라인 읽음
+   
+    
+    while(strcmp(buf, "\r\n" )) { 
         Rio_readlineb(rp, buf, MAXLINE);
         printf("%s", buf); // 읽어들인 헤더 라인 출력 (서버 로그용)
     }
@@ -201,36 +227,95 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
     }
 }
 
-// 6. serve_static - 정적 파일을 클라이언트에 복사하여 서비스
+// // 6. serve_static - 정적 파일을 클라이언트에 복사하여 서비스
+// void serve_static(int fd, char *filename, int filesize)
+// {
+//     int srcfd;
+//     char *srcp, filetype[MAXLINE], buf[MAXLINE];
+//     int header_len = 0; // 헤더 길이를 추적할 변수
+
+//     get_filetype(filename, filetype);
+
+//     // HTTP 응답 헤더 생성 (snprintf 사용)
+//     header_len += snprintf(buf + header_len, MAXLINE - header_len, "HTTP/1.0 200 OK\r\n");
+//     header_len += snprintf(buf + header_len, MAXLINE - header_len, "Server: Tiny Web Server\r\n");
+//     header_len += snprintf(buf + header_len, MAXLINE - header_len, "Connection: close\r\n");
+//     header_len += snprintf(buf + header_len, MAXLINE - header_len, "Content-length: %d\r\n", filesize);
+//     header_len += snprintf(buf + header_len, MAXLINE - header_len, "Content-type: %s\r\n\r\n", filetype);
+
+//     Rio_writen(fd, buf, header_len); // 완성된 HTTP 응답 헤더를 클라이언트에 전송
+//     printf("Response headers:\n");
+//     printf("%s", buf);
+
+
+//     srcfd = Open(filename, O_RDONLY, 0); // 요청 파일을 읽기 전용으로 열기
+
+//     // 파일을 메모리에 매핑 (mmap 사용): 파일을 메모리처럼 다룰 수 있게 함
+//     srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+//     Close(srcfd); // 파일을 메모리에 매핑했으므로 파일 디스크립터는 닫아도 됨
+    
+//     // 매핑된 메모리에서 클라이언트로 파일 내용 전송 
+//     Rio_writen(fd, srcp, filesize);
+//     Munmap(srcp, filesize); // 메모리 매핑 해제 (자원 반납)
+// }
+
+#define MAXBUF 8192 // 버퍼 크기 정의
+// 숙제문제 11.9 : Tiny를 수정해서 정적 컨텐츠를 처리할때 요청한 파일을 mmap 과 rio_readn 대신에
+// malloc, rio_writen 을 사용해서 연결 식별자에게 복사하도록 하시오.
 void serve_static(int fd, char *filename, int filesize)
 {
-    int srcfd; // 소스 파일 디스크립터
-    char *srcp, filetype[MAXLINE], buf[MAXLINE]; // 파일 내용을 매핑할 포인터, 파일 타입, 응답 버퍼
+    int srcfd;
+    char filetype[MAXLINE], buf[MAXBUF];
+    char *filebuf; // 파일을 읽어올 버퍼 포인터
+    ssize_t bytes_read; // 실제로 읽은 바이트 수
 
-    // 클라이언트에 응답 헤더 전송 
-    get_filetype(filename, filetype); // 파일명으로부터 파일 타입(MIME) 결정 
+    /* HTTP 응답 헤더 생성 */
+    // 이 부분은 이전 답변에서 제안드린 대로 snprintf와 header_len을 사용하는 것이 좋습니다.
+    // 여기서는 간략하게 작성하며, 이전 수정 내용을 가정합니다.
+    int header_len = 0;
+    get_filetype(filename, filetype); // 파일 타입 결정
+
+    header_len += snprintf(buf + header_len, MAXBUF - header_len, "HTTP/1.0 200 OK\r\n");
+    header_len += snprintf(buf + header_len, MAXBUF - header_len, "Server: Tiny Web Server\r\n");
+    header_len += snprintf(buf + header_len, MAXBUF - header_len, "Connection: close\r\n");
+    header_len += snprintf(buf + header_len, MAXBUF - header_len, "Content-length: %d\r\n", filesize);
+    header_len += snprintf(buf + header_len, MAXBUF - header_len, "Content-type: %s\r\n\r\n", filetype);
+
+    Rio_writen(fd, buf, header_len); // 헤더 전송
+    printf("Response headers:\n");
+    printf("%s", buf);
+
+    /* 요청된 파일 전송 */
+    // 1. 파일 열기
+    srcfd = Open(filename, O_RDONLY, 0); // O_RDONLY: 읽기 전용으로 열기
+
+    // 2. malloc으로 파일 내용 저장할 버퍼 할당
+    // 파일을 한 번에 읽어 메모리에 올리는 방식 (filesize가 MAXBUF보다 훨씬 클 경우 주의)
+    // 작은 파일의 경우 이 방식으로 처리하고, 큰 파일은 청크 방식으로 처리하는 것이 일반적
+    // 여기서는 파일을 전부 읽어올 크기로 malloc을 사용합니다.
+    filebuf = (char *)Malloc(filesize); 
     
-    // HTTP 응답 헤더 생성
-    sprintf(buf, "HTTP/1.0 200 OK\r\n"); // 응답 라인
-    sprintf(buf, "%sServer: Tiny Web Server\r\n", buf); // Server 헤더 추가
-    sprintf(buf, "%sConnection: close\r\n", buf); // Connection 헤더: 연결 종료를 알림
-    sprintf(buf, "%sContent-length: %d\r\n", buf, filesize); // Content-Length 헤더: 파일 크기
-    sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype); // Content-Type 헤더와 헤더 끝을 알리는 빈 줄
+    // 3. Rio_readn을 사용하여 파일 내용을 할당된 버퍼로 읽어옴
+    // Rio_readn은 fd로부터 size 바이트를 읽어 buf에 저장합니다.
+    bytes_read = Rio_readn(srcfd, filebuf, filesize); 
     
-    Rio_writen(fd, buf, strlen(buf)); // 완성된 HTTP 응답 헤더를 클라이언트에 전송
-    printf("Response headers:\n"); // 서버 터미널에 로그 출력
-    printf("%s", buf); // 전송된 응답 헤더 출력
+    // 읽은 바이트 수가 filesize와 다를 경우 오류 처리 로직 추가 가능
+    if (bytes_read != filesize) {
+        fprintf(stderr, "Error reading file %s: expected %d bytes, read %zd bytes\n",
+                filename, filesize, bytes_read);
+        // 오류 응답을 클라이언트에 보내거나 연결 종료 등 추가 처리 필요
+        Free(filebuf);
+        Close(srcfd);
+        return;
+    }
 
+    // 4. Rio_writen을 사용하여 버퍼의 내용을 연결 식별자(소켓)로 복사
+    // 읽어온 파일 내용을 소켓에 전송합니다.
+    Rio_writen(fd, filebuf, filesize); 
 
-    srcfd = Open(filename, O_RDONLY, 0); // 요청 파일을 읽기 전용으로 열기
-
-    // 파일을 메모리에 매핑 (mmap 사용): 파일을 메모리처럼 다룰 수 있게 함
-    srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
-    Close(srcfd); // 파일을 메모리에 매핑했으므로 파일 디스크립터는 닫아도 됨
-    
-    // 매핑된 메모리에서 클라이언트로 파일 내용 전송 
-    Rio_writen(fd, srcp, filesize);
-    Munmap(srcp, filesize); // 메모리 매핑 해제 (자원 반납)
+    // 5. 할당된 메모리 해제 및 파일 닫기
+    Free(filebuf); // malloc으로 할당한 메모리 해제
+    Close(srcfd); // 파일 디스크립터 닫기
 }
 
 // 7. get_filetype - 파일명으로부터 파일 타입(MIME)을 유추
@@ -238,14 +323,17 @@ void get_filetype(char *filename, char *filetype)
 {
     if (strstr(filename, ".html")) // 파일명에 ".html"이 포함되면
         strcpy(filetype, "text/html");
-    else if (strstr(filename, ".gif")) // .gif면
+    else if (strstr(filename, ".gif")) // .gif
         strcpy(filetype, "image/gif");
-    else if (strstr(filename, ".png")) // .png면
+    else if (strstr(filename, ".png")) // .png
         strcpy(filetype, "image/png");
-    else if (strstr(filename, ".jpg")) // .jpg면
+    else if (strstr(filename, ".jpg")) // .jpg
         strcpy(filetype, "image/jpeg");
-    else if (strstr(filename, ".mp4")) // .mp4면
+    else if (strstr(filename, ".mp4")) // .mp4
         strcpy(filetype, "video/mp4"); 
+
+    else if (strstr(filename, ".mpg")) // 숙제 11.8 : .mpg 또는 .mpeg 파일처리
+        strcpy(filetype, "video/mpeg"); 
     else
         strcpy(filetype, "text/plain"); //일반 텍스트 파일로 처리
 }
