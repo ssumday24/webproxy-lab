@@ -17,7 +17,7 @@ http://localhost:8000
 
 // 함수선언
 void doit(int fd); // HTTP 트랜잭션 처리
-void read_requesthdrs(rio_t *rp); // 요청 헤더 읽기 (무시)
+void read_requesthdrs(rio_t *rp); // (편의상 요청헤더 무시)
 int parse_uri(char *uri, char *filename, char *cgiargs); // URI 파싱 (파일명, CGI 인자)
 void serve_static(int fd, char *filename, int filesize); // 정적 파일 서비스
 void get_filetype(char *filename, char *filetype); // 파일 타입(MIME) 얻기
@@ -28,6 +28,7 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
 int main(int argc, char **argv)
 {
     int listenfd, connfd; // 듣기 소켓, 연결 소켓
+    //듣기 소켓은 서버당 1개만 존재
     char hostname[MAXLINE], port[MAXLINE]; // 클라이언트 호스트명, 포트명 저장 버퍼
     socklen_t clientlen; // 클라이언트 주소 구조체 크기
     struct sockaddr_storage clientaddr; // 클라이언트 소켓 주소 (IPv4/IPv6 겸용)
@@ -39,12 +40,12 @@ int main(int argc, char **argv)
     }
 
     // 듣기 소켓 생성 및 초기화 (socket, bind, listen 포함)
-    // argv[1]로 받은 포트 번호 사용
+    // argv[1]로 받은 포트 사용
     listenfd = Open_listenfd(argv[1]);
 
     // 무한 루프: 클라이언트 연결 계속 처리
     while (1) {
-        clientlen = sizeof(clientaddr); // 클라이언트 주소 구조체 크기 초기화
+        clientlen = sizeof(clientaddr);
         
         // 클라이언트 연결 요청 수락
         // listenfd로 들어온 요청 accept, 새 연결 소켓 connfd 반환
@@ -77,13 +78,13 @@ void doit(int fd)
     // 파일 경로와 CGI 프로그램 인자를 저장할 버퍼
     char filename[MAXLINE], cgiargs[MAXLINE];
 
-    rio_t rio; // 견고한 I/O(Robust I/O)를 위한 버퍼 구조체
+    rio_t rio; // (Robust I/O)를 위한 버퍼 구조체
 
     // 요청 라인과 헤더를 읽기 
     Rio_readinitb(&rio, fd); 
     Rio_readlineb(&rio, buf, MAXLINE); // 클라이언트로부터 HTTP 요청의 첫 번째 줄(요청 라인)을 읽어 buf에 저장
     printf("Request headers:\n"); 
-    printf("%s", buf); // 읽어들인 요청 라인 출력 
+    printf("%s", buf); // 읽어들인 [요청 라인 (Request Line)] 출력 
 
     sscanf(buf, "%s %s %s", method, uri, version);
 
@@ -104,7 +105,7 @@ void doit(int fd)
         return; 
     }
 
-    // 정적 콘텐츠 처리
+    // 정적 콘텐츠 처리 (parse_uri 리턴값이 1 일때)
     if (is_static) {
         // 요청된 파일이 일반 파일이 아니거나, 사용자에게 읽기 권한이 없으면
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {
@@ -117,7 +118,7 @@ void doit(int fd)
         serve_static(fd, filename, sbuf.st_size);
     }
     
-    // 동적 콘텐츠 (CGI 프로그램) 요청 처리
+    // 동적 콘텐츠 처리 (parse_uri 리턴값이 0 일때)
     else {
       
         // 요청된 파일이 일반 파일이 아니거나 현재 사용자에게 실행 권한이 없으면
@@ -206,7 +207,7 @@ void serve_static(int fd, char *filename, int filesize)
     int srcfd; // 소스 파일 디스크립터
     char *srcp, filetype[MAXLINE], buf[MAXLINE]; // 파일 내용을 매핑할 포인터, 파일 타입, 응답 버퍼
 
-    /* 클라이언트에 응답 헤더 전송 */
+    // 클라이언트에 응답 헤더 전송 
     get_filetype(filename, filetype); // 파일명으로부터 파일 타입(MIME) 결정 
     
     // HTTP 응답 헤더 생성
@@ -252,23 +253,27 @@ void get_filetype(char *filename, char *filetype)
 // 8. serve_dynamic - 클라이언트를 대신해 CGI 프로그램을 실행하는 함수
 void serve_dynamic(int fd, char *filename, char *cgiargs)
 {
-    char buf[MAXLINE], *emptylist[] = { NULL }; // 응답 버퍼, execve에 전달할 인자 리스트 (비어 있음)
+    char buf[MAXLINE], *emptylist[] = { NULL }; 
 
-    /* HTTP 응답의 첫 부분 (상태 라인 및 Server 헤더) 클라이언트에 반환 */
+    
     sprintf(buf, "HTTP/1.0 200 OK\r\n"); // 응답 라인
     Rio_writen(fd, buf, strlen(buf));
     sprintf(buf, "Server: Tiny Web Server\r\n"); // Server 헤더
     Rio_writen(fd, buf, strlen(buf));
 
-    // 자식 프로세스 생성: CGI 프로그램을 실행하기 위해 새로운 프로세스를 생성
-    if (Fork() == 0) { /* 자식 프로세스 */
+    // 자식 프로세스 생성: 
+    if (Fork() == 0) { 
+
         /* 실제 서버에서는 모든 CGI 환경 변수를 여기서 설정 */
         setenv("QUERY_STRING", cgiargs, 1); // CGI 환경 변수 QUERY_STRING 설정 (클라이언트 요청 인자)
         
-        // 표준 출력을 클라이언트 소켓으로 리다이렉션:
+        // 표준 출력을 클라이언트 소켓으로 리디렉션:
         // CGI 프로그램의 printf 결과가 클라이언트에게 직접 전송되도록 함
         Dup2(fd, STDOUT_FILENO);         
-        Execve(filename, emptylist, environ); /* CGI 프로그램 실행 */ // environ: 현재 환경 변수 목록
+
+        // CGI 프로그램 실행
+        // environ: 현재 환경 변수 목록
+        Execve(filename, emptylist, environ); 
     }
-    Wait(NULL); /* 부모 프로세스는 자식이 종료되기를 기다림 */ // 자식 프로세스가 좀비가 되는 것을 방지
+    Wait(NULL); // 부모 프로세스는 자식이 종료되기를 기다림 -> 자식 프로세스가 좀비가 되는 것을 방지
 }
