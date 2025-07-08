@@ -11,10 +11,13 @@ gcc -o tiny tiny.c csapp.c -lpthread -Wall
 3. 웹 브라우저 접속
 http://localhost:8000
 http://localhost:8000/home.html
+http://localhost:8000/add.html
 
 안될시 쿠키,캐시 삭제후 실행
 
 cd webproxy-lab/tiny && gcc -o tiny tiny.c csapp.c -lpthread -Wall && ./tiny 8000
+
+telnet localhost 8000
 */
 
 #include "csapp.h" 
@@ -23,9 +26,9 @@ cd webproxy-lab/tiny && gcc -o tiny tiny.c csapp.c -lpthread -Wall && ./tiny 800
 void doit(int fd); // HTTP 트랜잭션 처리
 void read_requesthdrs(rio_t *rp); // (편의상 요청헤더 무시)
 int parse_uri(char *uri, char *filename, char *cgiargs); // URI 파싱 (파일명, CGI 인자)
-void serve_static(int fd, char *filename, int filesize); // 정적 파일 서비스
+void serve_static(int fd, char *filename, int filesize, char *method); // 정적 파일 서비스
 void get_filetype(char *filename, char *filetype); // 파일 타입(MIME) 얻기
-void serve_dynamic(int fd, char *filename, char *cgiargs); // 동적 CGI 프로그램 서비스
+void serve_dynamic(int fd, char *filename, char *cgiargs, char *method); // 동적 CGI 프로그램 서비스
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg); // 클라이언트 오류 응답
 
 // 1. tiny main 
@@ -119,7 +122,7 @@ void doit(int fd)
         }
 
         // 모든 검사를 통과하면, 정적 파일 서비스 함수 호출
-        serve_static(fd, filename, sbuf.st_size);
+        serve_static(fd, filename, sbuf.st_size,method);
     }
     
     // 동적 콘텐츠 처리 (parse_uri 리턴값이 0 일때)
@@ -133,11 +136,11 @@ void doit(int fd)
         }
 
         // 모든 검사를 통과하면, 동적 CGI 프로그램 서비스 함수 호출
-        serve_dynamic(fd, filename, cgiargs);
+        serve_dynamic(fd, filename, cgiargs,method);
     }
 }
 
-// 3.  에처 처리 기능
+// 3.  에러 처리 기능
 void clienterror(int fd, char *cause, char *errnum,
     char *shortmsg, char *longmsg)
 {
@@ -262,16 +265,15 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
 #define MAXBUF 8192 // 버퍼 크기 정의
 // 숙제문제 11.9 : Tiny를 수정해서 정적 컨텐츠를 처리할때 요청한 파일을 mmap 과 rio_readn 대신에
 // malloc, rio_writen 을 사용해서 연결 식별자에게 복사하도록 하시오.
-void serve_static(int fd, char *filename, int filesize)
+void serve_static(int fd, char *filename, int filesize , char *method)
 {
     int srcfd;
     char filetype[MAXLINE], buf[MAXBUF];
     char *filebuf; // 파일을 읽어올 버퍼 포인터
-    ssize_t bytes_read; // 실제로 읽은 바이트 수
+    
+  
 
     /* HTTP 응답 헤더 생성 */
-    // 이 부분은 이전 답변에서 제안드린 대로 snprintf와 header_len을 사용하는 것이 좋습니다.
-    // 여기서는 간략하게 작성하며, 이전 수정 내용을 가정합니다.
     int header_len = 0;
     get_filetype(filename, filetype); // 파일 타입 결정
 
@@ -285,37 +287,26 @@ void serve_static(int fd, char *filename, int filesize)
     printf("Response headers:\n");
     printf("%s", buf);
 
-    /* 요청된 파일 전송 */
-    // 1. 파일 열기
-    srcfd = Open(filename, O_RDONLY, 0); // O_RDONLY: 읽기 전용으로 열기
-
-    // 2. malloc으로 파일 내용 저장할 버퍼 할당
-    // 파일을 한 번에 읽어 메모리에 올리는 방식 (filesize가 MAXBUF보다 훨씬 클 경우 주의)
-    // 작은 파일의 경우 이 방식으로 처리하고, 큰 파일은 청크 방식으로 처리하는 것이 일반적
-    // 여기서는 파일을 전부 읽어올 크기로 malloc을 사용합니다.
-    filebuf = (char *)Malloc(filesize); 
-    
-    // 3. Rio_readn을 사용하여 파일 내용을 할당된 버퍼로 읽어옴
-    // Rio_readn은 fd로부터 size 바이트를 읽어 buf에 저장합니다.
-    bytes_read = Rio_readn(srcfd, filebuf, filesize); 
-    
-    // 읽은 바이트 수가 filesize와 다를 경우 오류 처리 로직 추가 가능
-    if (bytes_read != filesize) {
-        fprintf(stderr, "Error reading file %s: expected %d bytes, read %zd bytes\n",
-                filename, filesize, bytes_read);
-        // 오류 응답을 클라이언트에 보내거나 연결 종료 등 추가 처리 필요
-        Free(filebuf);
-        Close(srcfd);
-        return;
+   // 만약 HEAD 요청이라면, 본문(body)은 보내지 않고 함수를 종료.
+    if (strcasecmp(method, "HEAD") == 0) 
+    {
+        return; // 본문 전송 안하고 리턴
     }
 
-    // 4. Rio_writen을 사용하여 버퍼의 내용을 연결 식별자(소켓)로 복사
-    // 읽어온 파일 내용을 소켓에 전송합니다.
-    Rio_writen(fd, filebuf, filesize); 
+    // GET 요청의 경우 응답 본문을 클라이언트에 전송
 
-    // 5. 할당된 메모리 해제 및 파일 닫기
-    Free(filebuf); // malloc으로 할당한 메모리 해제
-    Close(srcfd); // 파일 디스크립터 닫기
+    srcfd = Open(filename, O_RDONLY, 0); // O_RDONLY: 읽기 전용으로 열기
+    filebuf = (char *)Malloc(filesize); 
+    Rio_readn(srcfd,filebuf,filesize);
+    Close(srcfd);
+    Rio_writen(fd,filebuf,filesize);
+    Free(filebuf);
+
+
+
+
+
+
 }
 
 // 7. get_filetype - 파일명으로부터 파일 타입(MIME)을 유추
@@ -339,15 +330,29 @@ void get_filetype(char *filename, char *filetype)
 }
 
 // 8. serve_dynamic - 클라이언트를 대신해 CGI 프로그램을 실행하는 함수
-void serve_dynamic(int fd, char *filename, char *cgiargs)
+void serve_dynamic(int fd, char *filename, char *cgiargs,char *method)
 {
     char buf[MAXLINE], *emptylist[] = { NULL }; 
-
+    int header_len = 0;
     
-    sprintf(buf, "HTTP/1.0 200 OK\r\n"); // 응답 라인
-    Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf, "Server: Tiny Web Server\r\n"); // Server 헤더
-    Rio_writen(fd, buf, strlen(buf));
+    // HTTP 응답 헤더 (초기 부분) 생성
+    header_len += snprintf(buf + header_len, MAXLINE - header_len, "HTTP/1.0 200 OK\r\n");
+    header_len += snprintf(buf + header_len, MAXLINE - header_len, "Server: Tiny Web Server\r\n");
+    // 동적 콘텐츠의 Content-length와 Content-type은 보통 CGI 프로그램이 직접 출력하므로,
+    // HEAD 요청 시에는 최소한의 헤더만 보냅니다.
+    // GET 요청 시에는 CGI 프로그램이 이어서 Content-type 등을 출력할 것입니다.
+    
+    // 최종 헤더 종료를 위한 빈 줄 추가 (실제 본문이 없더라도 헤더 종료 표시는 필수)
+    header_len += snprintf(buf + header_len, MAXLINE - header_len, "\r\n"); 
+    
+    Rio_writen(fd, buf, header_len); // 헤더 전송
+
+    // 만약 HEAD 요청이라면, 출력 전송x
+    if (strcasecmp(method, "HEAD") == 0) {
+        return;
+    }
+
+
 
     // 자식 프로세스 생성: 
     if (Fork() == 0) { 
