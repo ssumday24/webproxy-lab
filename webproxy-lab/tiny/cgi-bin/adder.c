@@ -32,13 +32,13 @@ int main(void)
 
 
   //  "QUERY_STRING"에서 요청 인자("first=10&second=20") 추출
-  // 웹 서버는 GET 요청의 쿼리 스트링을 QUERY_STRING 환경 변수에 넣어 CGI 프로그램에 전달
+
   if ((buf = getenv("QUERY_STRING")) != NULL)
   {
-    // buf에서 '&' 문자를 찾습니다. '&'는 두 인자를 구분하는 역할을 합니다.
+    
     p = strchr(buf, '&');
 
-    // 찾은 '&' 위치에 널 문자('\0')를 넣어 buf 문자열을 첫 번째 인자까지만 유효하게 만듦
+  
     // "first=10&second=20" -> "first=10\0second=20"
     *p = '\0';
 
