@@ -230,38 +230,6 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
     }
 }
 
-// // 6. serve_static - 정적 파일을 클라이언트에 복사하여 서비스
-// void serve_static(int fd, char *filename, int filesize)
-// {
-//     int srcfd;
-//     char *srcp, filetype[MAXLINE], buf[MAXLINE];
-//     int header_len = 0; // 헤더 길이를 추적할 변수
-
-//     get_filetype(filename, filetype);
-
-//     // HTTP 응답 헤더 생성 (snprintf 사용)
-//     header_len += snprintf(buf + header_len, MAXLINE - header_len, "HTTP/1.0 200 OK\r\n");
-//     header_len += snprintf(buf + header_len, MAXLINE - header_len, "Server: Tiny Web Server\r\n");
-//     header_len += snprintf(buf + header_len, MAXLINE - header_len, "Connection: close\r\n");
-//     header_len += snprintf(buf + header_len, MAXLINE - header_len, "Content-length: %d\r\n", filesize);
-//     header_len += snprintf(buf + header_len, MAXLINE - header_len, "Content-type: %s\r\n\r\n", filetype);
-
-//     Rio_writen(fd, buf, header_len); // 완성된 HTTP 응답 헤더를 클라이언트에 전송
-//     printf("Response headers:\n");
-//     printf("%s", buf);
-
-
-//     srcfd = Open(filename, O_RDONLY, 0); // 요청 파일을 읽기 전용으로 열기
-
-//     // 파일을 메모리에 매핑 (mmap 사용): 파일을 메모리처럼 다룰 수 있게 함
-//     srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
-//     Close(srcfd); // 파일을 메모리에 매핑했으므로 파일 디스크립터는 닫아도 됨
-    
-//     // 매핑된 메모리에서 클라이언트로 파일 내용 전송 
-//     Rio_writen(fd, srcp, filesize);
-//     Munmap(srcp, filesize); // 메모리 매핑 해제 (자원 반납)
-// }
-
 #define MAXBUF 8192 // 버퍼 크기 정의
 // 숙제문제 11.9 : Tiny를 수정해서 정적 컨텐츠를 처리할때 요청한 파일을 mmap 과 rio_readn 대신에
 // malloc, rio_writen 을 사용해서 연결 식별자에게 복사하도록 하시오.
