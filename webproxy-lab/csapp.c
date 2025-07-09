@@ -878,7 +878,7 @@ ssize_t rio_readlineb(rio_t *rp, void *usrbuf, size_t maxlen)
 	    *bufp++ = c;
 	    if (c == '\n') {
                 n++;
-     		break;
+     		break; // 줄바꿈 문자를 찾으면 루프 종료
             }
 	} else if (rc == 0) {
 	    if (n == 1)

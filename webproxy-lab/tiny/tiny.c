@@ -91,7 +91,7 @@ void doit(int fd)
     Rio_readinitb(&rio, fd); 
     Rio_readlineb(&rio, buf, MAXLINE); // 클라이언트로부터 HTTP 요청의 첫 번째 줄(요청 라인)을 읽어 buf에 저장
     printf("Request headers:\n"); 
-    printf("%s", buf); // 읽어들인 [요청 라인 (Request Line)] 출력 
+    printf("%s", buf); // 읽어들인 요청 라인 출력 
 
     sscanf(buf, "%s %s %s", method, uri, version);
 
@@ -269,11 +269,6 @@ void serve_static(int fd, char *filename, int filesize , char *method)
     Close(srcfd);
     Rio_writen(fd,filebuf,filesize);
     Free(filebuf);
-
-
-
-
-
 
 }
 
